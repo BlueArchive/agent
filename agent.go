@@ -5,7 +5,9 @@ type (
 	Options struct {
 		AgentServerAddr       string
 		AgentServerPort       string
+		HostMode              bool
 		ClusterAddress        string
+		ClusterPort           int
 		HostManagementEnabled bool
 		SharedSecret          string
 		EdgeMode              bool
@@ -78,7 +80,7 @@ type (
 
 	// ClusterService is used to manage a cluster of agents.
 	ClusterService interface {
-		Create(advertiseAddr string, joinAddr []string) error
+		Create(advertiseAddr string, joinAddr []string, bindPort int) error
 		Members() []ClusterMember
 		Leave()
 		GetMemberByRole(role string) *ClusterMember

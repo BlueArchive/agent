@@ -17,6 +17,7 @@ import (
 	"github.com/portainer/agent/net"
 	"github.com/portainer/agent/os"
 	cluster "github.com/portainer/agent/serf"
+	realnet "net"
 )
 
 func main() {
@@ -41,21 +42,40 @@ func main() {
 		log.Println("[INFO] [main] [message: Agent running on a Swarm cluster node. Running in cluster mode]")
 	}
 
-	containerName, err := os.GetHostName()
-	if err != nil {
-		log.Fatalf("[ERROR] [main,os] [message: Unable to retrieve container name] [error: %s]", err)
+	var containerName string
+	clusterAddr := options.ClusterAddress
+	var advertiseAddr string
+	var joinAddrs []string
+
+	// host-mode networking expects to be given the cluster joining address - which can be just the
+	// ip address of a single node of the cluster (including itself)
+	// it then determines its own advertise address
+	if options.HostMode {
+		if clusterAddr == "" {
+			log.Fatalf("[ERROR] [main,os] [message: host-mode requires the cluster address]")
+		}
+		joinAddrs = append(joinAddrs, clusterAddr)
+		if advertiseAddr, err = outboundIP(clusterAddr); err != nil {
+			log.Fatalf("[ERROR] [main,os] [message: Unable to determine outbound IP address]  [error: %s]", err)
+		}
+	} else {
+		containerName, err = os.GetHostName()
+		if err != nil {
+			log.Fatalf("[ERROR] [main,os] [message: Unable to retrieve container name] [error: %s]", err)
+		}
 	}
 
-	advertiseAddr, err := infoService.GetContainerIpFromDockerEngine(containerName, clusterMode)
-	if err != nil {
-		log.Fatalf("[ERROR] [main,docker] [message: Unable to retrieve local agent IP address] [error: %s]", err)
+	if advertiseAddr == "" {
+		advertiseAddr, err = infoService.GetContainerIpFromDockerEngine(containerName, clusterMode && options.HostMode)
+		if err != nil {
+			log.Fatalf("[ERROR] [main,docker] [message: Unable to retrieve local agent IP address] [error: %s]", err)
+		}
 	}
 
 	var clusterService agent.ClusterService
 	if clusterMode {
 		clusterService = cluster.NewClusterService(agentTags)
 
-		clusterAddr := options.ClusterAddress
 		if clusterAddr == "" {
 			serviceName, err := infoService.GetServiceNameFromDockerEngine(containerName)
 			if err != nil {
@@ -65,16 +85,18 @@ func main() {
 			clusterAddr = fmt.Sprintf("tasks.%s", serviceName)
 		}
 
-		// TODO: Workaround. looks like the Docker DNS cannot find any info on tasks.<service_name>
-		// sometimes... Waiting a bit before starting the discovery (at least 3 seconds) seems to solve the problem.
-		time.Sleep(3 * time.Second)
+		if len(joinAddrs) == 0 {
+			// TODO: Workaround. looks like the Docker DNS cannot find any info on tasks.<service_name>
+			// sometimes... Waiting a bit before starting the discovery (at least 3 seconds) seems to solve the problem.
+			time.Sleep(3 * time.Second)
 
-		joinAddr, err := net.LookupIPAddresses(clusterAddr)
-		if err != nil {
-			log.Fatalf("[ERROR] [main,net] [host: %s] [message: Unable to retrieve a list of IP associated to the host] [error: %s]", clusterAddr, err)
+			joinAddrs, err = net.LookupIPAddresses(clusterAddr)
+			if err != nil {
+				log.Fatalf("[ERROR] [main,net] [host: %s] [message: Unable to retrieve a list of IP associated to the host] [error: %s]", clusterAddr, err)
+			}
 		}
 
-		err = clusterService.Create(advertiseAddr, joinAddr)
+		err = clusterService.Create(advertiseAddr, joinAddrs, options.ClusterPort)
 		if err != nil {
 			log.Fatalf("[ERROR] [main,cluster] [message: Unable to create cluster] [error: %s]", err)
 		}
@@ -142,6 +164,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("[ERROR] [main,http] [message: Unable to start Agent API server] [error: %s]", err)
 	}
+}
+
+func outboundIP(clusterAddr string) (ip string, err error) {
+	if conn, err := realnet.Dial("udp", clusterAddr+":0"); err == nil {
+		defer conn.Close()
+		localAddr := conn.LocalAddr().(*realnet.UDPAddr)
+		return fmt.Sprintf("%v", localAddr.IP), nil
+	}
+	return "", err
 }
 
 func startAPIServer(config *http.APIServerConfig) error {

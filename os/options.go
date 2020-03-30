@@ -13,6 +13,8 @@ const (
 	EnvKeyAgentHost             = "AGENT_HOST"
 	EnvKeyAgentPort             = "AGENT_PORT"
 	EnvKeyClusterAddr           = "AGENT_CLUSTER_ADDR"
+	EnvKeyClusterPort           = "AGENT_CLUSTER_PORT"
+	EnvKeyHostMode              = "AGENT_HOST_MODE"
 	EnvKeyAgentSecret           = "AGENT_SECRET"
 	EnvKeyCapHostManagement     = "CAP_HOST_MANAGEMENT"
 	EnvKeyEdge                  = "EDGE"
@@ -35,7 +37,9 @@ func (parser *EnvOptionParser) Options() (*agent.Options, error) {
 	options := &agent.Options{
 		AgentServerAddr:       agent.DefaultAgentAddr,
 		AgentServerPort:       agent.DefaultAgentPort,
+		HostMode:              false,
 		ClusterAddress:        os.Getenv(EnvKeyClusterAddr),
+		ClusterPort:           7946,
 		HostManagementEnabled: false,
 		SharedSecret:          os.Getenv(EnvKeyAgentSecret),
 		EdgeID:                os.Getenv(EnvKeyEdgeID),
@@ -44,6 +48,10 @@ func (parser *EnvOptionParser) Options() (*agent.Options, error) {
 		EdgeInactivityTimeout: agent.DefaultEdgeSleepInterval,
 		EdgeInsecurePoll:      false,
 		LogLevel:              agent.DefaultLogLevel,
+	}
+
+	if os.Getenv(EnvKeyHostMode) == "1" {
+		options.HostMode = true
 	}
 
 	if os.Getenv(EnvKeyCapHostManagement) == "1" {
@@ -74,6 +82,15 @@ func (parser *EnvOptionParser) Options() (*agent.Options, error) {
 			return nil, errors.New("invalid port format in " + EnvKeyAgentPort + " environment variable")
 		}
 		options.AgentServerPort = agentPortEnv
+	}
+
+	agentClusterPortEnv := os.Getenv(EnvKeyClusterPort)
+	if agentClusterPortEnv != "" {
+		port, err := strconv.Atoi(agentClusterPortEnv)
+		if err != nil {
+			return nil, errors.New("invalid port format in " + EnvKeyClusterPort + " environment variable")
+		}
+		options.ClusterPort = port
 	}
 
 	edgeAddrEnv := os.Getenv(EnvKeyEdgeServerHost)

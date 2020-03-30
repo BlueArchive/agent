@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+set -eo pipefail
 # Requires:
 # * Go SDK (version >= 1.11)
 
@@ -57,7 +57,7 @@ function build_all() {
   done
 }
 
-mkdir dist
-build_all 'linux-amd64 linux-arm linux-arm64 linux-ppc64le linux-s390x windows-amd64'
+mkdir -p dist
+build_all 'linux-amd64'
 
 exit 0
